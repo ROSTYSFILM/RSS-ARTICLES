@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: RSS
+    env: node
+    plan: free
+    buildCommand: yarn install
+    startCommand: node index.js
+    nodeVersion: 20.11.1
+    autoDeploy: false
