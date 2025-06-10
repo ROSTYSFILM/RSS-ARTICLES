@@ -1,5 +1,5 @@
 {
-  "name": "article-parser",
+  "name": "RSS",
   "version": "1.0.0",
   "description": "Extract full article content using Puppeteer and Readability",
   "main": "index.js",
