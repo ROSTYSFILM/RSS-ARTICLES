@@ -1,15 +1,20 @@
 {
-  "name": "RSS",
+  "name": "article-parser",
   "version": "1.0.0",
-  "description": "Extract full article content using Puppeteer and Readability",
+  "description": "API для повного витягу статей через Puppeteer + Readability",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer": "^22.8.2",
+    "express": "^4.18.4",
+    "cors": "^2.8.5",
+    "puppeteer": "^24.10.0",
     "@mozilla/readability": "^0.4.4",
     "jsdom": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
