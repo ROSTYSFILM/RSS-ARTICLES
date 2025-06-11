@@ -1,44 +1,43 @@
-const express = require("express");
-const puppeteer = require("puppeteer");
-const { Readability } = require("@mozilla/readability");
-const { JSDOM } = require("jsdom");
+import express from 'express';
+import puppeteer from 'puppeteer';
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
+import cors from 'cors';
 
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Article Parser is running!");
-});
+app.use(cors());
+app.get('/', (req, res) => res.send('🟢 Article parser is running!'));
 
-app.post("/parse", async (req, res) => {
-  const { url } = req.body;
-  if (!url) {
-    return res.status(400).json({ error: "Missing URL" });
-  }
+app.get('/extract', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'Missing URL' });
 
   try {
     const browser = await puppeteer.launch({
-      headless: "new", // новий безголовий режим, сумісний з Puppeteer 22+
-      args: ["--no-sandbox"], // необхідно для хостингів на кшталт Render
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle2" });
-
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
     const html = await page.content();
-    const dom = new JSDOM(html, { url });
-    const reader = new Readability(dom.window.document);
-    const article = reader.parse();
-
     await browser.close();
-    res.json(article);
+
+    const dom = new JSDOM(html, { url });
+    const article = new Readability(dom.window.document).parse();
+
+    if (!article) return res.status(500).json({ error: 'Failed to parse article' });
+    res.json({
+      title: article.title,
+      textContent: article.textContent,
+      content: article.content
+    });
   } catch (err) {
-    console.error("Parsing error:", err);
-    res.status(500).json({ error: err.toString() });
+    console.error(err);
+    res.status(500).json({ error: 'Extract failed', details: err.message });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Server on port ${PORT}`));
