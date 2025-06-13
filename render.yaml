@@ -3,9 +3,10 @@ services:
     name: radar-parser
     runtime: node
     buildCommand: |
-      rm -rf .cache
-      npm install
+      npm ci
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
         value: "24"
+      - key: PUPPETEER_CACHE_DIR
+        value: "/opt/render/.cache/puppeteer"
