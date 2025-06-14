@@ -39,11 +39,13 @@ app.get('/extract', async (req, res) => {
     const page = await context.newPage();
 
     // додаємо заголовки, як у звичайного браузера
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
+    );
+
     await page.setExtraHTTPHeaders({
-      'accept-language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7',
-      'user-agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-        '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+      'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
     });
 
     // імітуємо параметри екрану
