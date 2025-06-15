@@ -29,37 +29,29 @@ app.get('/extract', async (req, res) => {
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--lang=de-DE',
-        '--window-size=1920,1080'
+        '--lang=uk-UA',
+        '--window-size=1440,900'
       ]
     });
 
     const context = await browser.createBrowserContext();
     const page = await context.newPage();
 
-    // Реалістичний User-Agent для Chrome 137
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
       '(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
     );
 
-    // Мова — як у німецького користувача
     await page.setExtraHTTPHeaders({
-      'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8'
+      'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
     });
 
-    // Роздільна здатність — стандартна для десктопу
-    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setViewport({ width: 1440, height: 900 });
 
-    // Часова зона + геолокація Франкфурта
-    await page.emulateTimezone('Europe/Berlin');
+    await page.emulateTimezone('Europe/Kiev');
     await context.overridePermissions(url, ['geolocation']);
-    await page.setGeolocation({
-      latitude: 50.1109,
-      longitude: 8.6821
-    });
+    await page.setGeolocation({ latitude: 50.45, longitude: 30.523 });
 
-    // Відкриваємо сторінку і чекаємо на повну загрузку
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 120000 });
 
     const html = await page.content();
@@ -73,9 +65,12 @@ app.get('/extract', async (req, res) => {
     }
 
     res.json({
-      title: article.title,
-      textContent: article.textContent,
-      content: article.content
+      title: article.title || '',
+      textContent: article.textContent || '',
+      direction: article.dir || 'ltr',
+      length: article.length || 0,
+      siteName: article.siteName || null,
+      byline: article.byline || null
     });
 
   } catch (err) {
