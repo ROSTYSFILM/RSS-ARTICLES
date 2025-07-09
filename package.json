@@ -14,7 +14,9 @@
     "puppeteer-extra-plugin-stealth": "^2.11.1",
     "puppeteer": "^24.10.0",
     "@mozilla/readability": "^0.4.4",
-    "jsdom": "^24.0.0"
+    "jsdom": "^24.0.0",
+    "axios": "^1.6.0",       // ✅ нове
+    "xml2js": "^0.6.2"       // ✅ нове
   },
   "engines": {
     "node": ">=18 <25"
