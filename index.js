@@ -1,5 +1,5 @@
 import express from "express";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 import axios from "axios";
 import xml2js from "xml2js";
 
@@ -7,17 +7,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const VIEWPORT = { width: 1366, height: 768 };
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
 
-const DELAY_BETWEEN_PAGES_MS = 4000; // пауза між сторінками (4 секунди)
+const DELAY_BETWEEN_PAGES_MS = 4000;
 
 async function extractUrlsFromSitemap(sitemapUrl) {
   console.log(`📡 Завантажую sitemap: ${sitemapUrl}`);
   const { data } = await axios.get(sitemapUrl);
 
-  // Очищуємо "погані" & перед парсингом
   let cleanData = data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;");
-
   const parsed = await xml2js.parseStringPromise(cleanData);
 
   if (!parsed.urlset || !parsed.urlset.url) {
@@ -34,14 +33,18 @@ app.get("/extract", async (req, res) => {
   const sitemapUrl = req.query.url;
 
   if (!sitemapUrl || !sitemapUrl.startsWith("http")) {
-    return res.status(400).json({ error: "Невірний або відсутній параметр ?url" });
+    return res
+      .status(400)
+      .json({ error: "Невірний або відсутній параметр ?url" });
   }
 
   try {
     const urls = await extractUrlsFromSitemap(sitemapUrl);
 
     if (!Array.isArray(urls) || urls.length === 0) {
-      return res.status(404).json({ error: "Жодного <loc> у sitemap не знайдено." });
+      return res
+        .status(404)
+        .json({ error: "Жодного <loc> у sitemap не знайдено." });
     }
 
     const browser = await puppeteer.launch({
@@ -50,10 +53,9 @@ app.get("/extract", async (req, res) => {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--lang=uk-UA",
-        "--window-size=1366,768",
+        "--window-size=1366,768"
       ],
-      defaultViewport: VIEWPORT,
-      executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
+      defaultViewport: VIEWPORT
     });
 
     let visited = 0;
@@ -63,7 +65,10 @@ app.get("/extract", async (req, res) => {
       await page.setUserAgent(USER_AGENT);
 
       try {
-        await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+        await page.goto(url, {
+          waitUntil: "networkidle2",
+          timeout: 30000
+        });
         visited++;
         console.log(`✅ Прогріто: ${url}`);
       } catch (error) {
@@ -80,7 +85,10 @@ app.get("/extract", async (req, res) => {
     return res.json({ status: "done", total: visited });
   } catch (error) {
     console.error("🚨 Помилка в /extract:", error);
-    return res.status(500).json({ error: "Internal Server Error", message: error.message || "Невідома помилка" });
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message || "Невідома помилка"
+    });
   }
 });
 
