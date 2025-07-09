@@ -14,7 +14,11 @@ const DELAY_BETWEEN_PAGES_MS = 4000; // пауза між сторінками (
 async function extractUrlsFromSitemap(sitemapUrl) {
   console.log(`📡 Завантажую sitemap: ${sitemapUrl}`);
   const { data } = await axios.get(sitemapUrl);
-  const parsed = await xml2js.parseStringPromise(data);
+
+  // Очищуємо "погані" & перед парсингом
+  let cleanData = data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;");
+
+  const parsed = await xml2js.parseStringPromise(cleanData);
 
   if (!parsed.urlset || !parsed.urlset.url) {
     throw new Error("Sitemap XML не містить <urlset><url>");
@@ -68,7 +72,6 @@ app.get("/extract", async (req, res) => {
         await page.close();
       }
 
-      // Пауза між сторінками, щоб не навантажувати
       await new Promise((r) => setTimeout(r, DELAY_BETWEEN_PAGES_MS));
     }
 
