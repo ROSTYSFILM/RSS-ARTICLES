@@ -2,14 +2,15 @@ services:
   - type: web
     name: radar-parser
     runtime: node
+    env:
+      NODE_VERSION: "24"
+      PUPPETEER_CACHE_DIR: "/opt/render/.cache/puppeteer"
+      CHROMIUM_EXECUTABLE_PATH: "/usr/bin/chromium-browser"  # або той шлях, який актуальний в Render
     buildCommand: |
       npm ci
-      npx puppeteer browsers install chrome
     startCommand: npm start
-    envVars:
-      - key: NODE_VERSION
-        value: "24"
-      - key: PUPPETEER_CACHE_DIR
-        value: "/opt/render/.cache/puppeteer"
-      - key: CHROMIUM_EXECUTABLE_PATH
-        value: "/opt/render/project/.render/chrome/linux-123.0.6312.122/chrome-linux64/chrome"
+    instanceCount: 1
+    instanceType: standard
+    healthCheckPath: /
+    ports:
+      - 10000
