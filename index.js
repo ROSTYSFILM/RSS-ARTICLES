@@ -1,87 +1,76 @@
-import express from 'express';
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
-import cors from 'cors';
-
-puppeteer.use(StealthPlugin());
+import express from "express";
+import puppeteer from "puppeteer-core";
+import axios from "axios";
+import xml2js from "xml2js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const VIEWPORT = { width: 1366, height: 768 };
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
+const MAX_CONCURRENT_TABS = 3;
+const DELAY_BETWEEN_BATCHES = 4000;
 
-app.get('/', (req, res) => {
-  res.send('🟢 RSS-ARTICLES');
-});
+app.get("/extract", async (req, res) => {
+  const sitemapUrl = req.query.url;
 
-app.get('/extract', async (req, res) => {
-  const { url } = req.query;
-  if (!url) {
-    return res.status(400).json({ error: 'Missing URL' });
+  if (!sitemapUrl || !sitemapUrl.startsWith("http")) {
+    return res.status(400).json({ error: "Невірний або відсутній параметр ?url" });
   }
 
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: 'new',
+    const urls = await extractUrlsFromSitemap(sitemapUrl);
+    const browser = await puppeteer.launch({
+      headless: "new",
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--lang=uk-UA',
-        '--window-size=1440,900'
-      ]
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--lang=uk-UA",
+        "--window-size=1366,768",
+      ],
+      defaultViewport: VIEWPORT,
     });
 
-    const context = await browser.createBrowserContext();
-    const page = await context.newPage();
+    let visited = 0;
 
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
-    );
-
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
-    });
-
-    await page.setViewport({ width: 1440, height: 900 });
-
-    await page.emulateTimezone('Europe/Kiev');
-    await context.overridePermissions(url, ['geolocation']);
-    await page.setGeolocation({ latitude: 50.45, longitude: 30.523 });
-
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 120000 });
-
-    const html = await page.content();
-    await browser.close();
-
-    const dom = new JSDOM(html, { url });
-    const article = new Readability(dom.window.document).parse();
-
-    if (!article) {
-      throw new Error('Failed to parse article');
+    for (let i = 0; i < urls.length; i += MAX_CONCURRENT_TABS) {
+      const batch = urls.slice(i, i + MAX_CONCURRENT_TABS);
+      await Promise.all(batch.map(async (url) => {
+        const page = await browser.newPage();
+        await page.setUserAgent(USER_AGENT);
+        try {
+          await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+          visited++;
+          console.log(`✅ ${url}`);
+        } catch (err) {
+          console.warn(`❌ ${url}: ${err.message}`);
+        } finally {
+          await page.close();
+        }
+      }));
+      await new Promise(r => setTimeout(r, DELAY_BETWEEN_BATCHES));
     }
 
-    res.json({
-      title: article.title || '',
-      textContent: article.textContent || '',
-      direction: article.dir || 'ltr',
-      length: article.length || 0,
-      siteName: article.siteName || null,
-      byline: article.byline || null
-    });
+    await browser.close();
+    return res.json({ status: "done", total: visited });
 
   } catch (err) {
-    if (browser) {
-      try { await browser.close(); } catch {}
-    }
-    console.error(err);
-    res.status(500).json({ error: 'Extract failed', details: err.message });
+    console.error("🚨 Помилка під час обробки:", err.message);
+    return res.status(500).json({ error: "Не вдалося обробити sitemap", message: err.message });
   }
 });
 
-app.listen(PORT, () =>
-  console.log(`✅ Server on port ${PORT}`)
-);
+async function extractUrlsFromSitemap(sitemapUrl) {
+  const { data } = await axios.get(sitemapUrl);
+  const parsed = await xml2js.parseStringPromise(data);
+  const urls = parsed.urlset.url.map(entry => entry.loc[0]);
+  return urls.filter(url => url.startsWith("https://agriradar.news/"));
+}
+
+app.get("/", (req, res) => {
+  res.send("🛰️ RSS Puppeteer Crawler API — працює");
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 API доступний на порті ${PORT}`);
+});
