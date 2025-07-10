@@ -1,101 +1,124 @@
-import express from "express";
-import puppeteer from "puppeteer";
-import axios from "axios";
-import xml2js from "xml2js";
+import express from 'express';
+import cors from 'cors';
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
+import fetch from 'node-fetch';
+import fs from 'fs/promises';
+import path from 'path';
+import puppeteer from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
+const __dirname = path.resolve();
 
-const VIEWPORT = { width: 1366, height: 768 };
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36";
+app.use(cors());
 
-const DELAY_BETWEEN_PAGES_MS = 4000;
+const chromePath = '/opt/render/project/.local-chromium/chrome-linux/chrome';
+const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const language = 'uk-UA';
+const timezone = 'Europe/Kyiv';
 
-async function extractUrlsFromSitemap(sitemapUrl) {
-  console.log(`📡 Завантажую sitemap: ${sitemapUrl}`);
-  const { data } = await axios.get(sitemapUrl);
+const delay = ms => new Promise(res => setTimeout(res, ms));
 
-  let cleanData = data.replace(/&(?!amp;|lt;|gt;|quot;|apos;)/g, "&amp;");
-  const parsed = await xml2js.parseStringPromise(cleanData);
-
-  if (!parsed.urlset || !parsed.urlset.url) {
-    throw new Error("Sitemap XML не містить <urlset><url>");
-  }
-
-  const urls = parsed.urlset.url.map((entry) => entry.loc[0]);
-  console.log(`🔍 Знайдено URLів: ${urls.length}`);
-
+async function getUrlsFromSitemap(sitemapUrl) {
+  const res = await fetch(sitemapUrl);
+  const xml = await res.text();
+  const urls = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]);
   return urls;
 }
 
-app.get("/extract", async (req, res) => {
+app.get('/extract', async (req, res) => {
   const sitemapUrl = req.query.url;
+  if (!sitemapUrl) return res.status(400).send('Missing ?url');
 
-  if (!sitemapUrl || !sitemapUrl.startsWith("http")) {
-    return res
-      .status(400)
-      .json({ error: "Невірний або відсутній параметр ?url" });
-  }
+  console.log(`\ud83d\udcf1 Завантажую sitemap: ${sitemapUrl}`);
 
   try {
-    const urls = await extractUrlsFromSitemap(sitemapUrl);
+    const urls = await getUrlsFromSitemap(sitemapUrl);
+    console.log(`\ud83d\udd0d Знайдено URLів: ${urls.length}`);
 
-    if (!Array.isArray(urls) || urls.length === 0) {
-      return res
-        .status(404)
-        .json({ error: "Жодного <loc> у sitemap не знайдено." });
+    const donePath = path.join(__dirname, 'done.json');
+    let done = [];
+    try {
+      const data = await fs.readFile(donePath, 'utf-8');
+      done = JSON.parse(data);
+    } catch {
+      done = [];
     }
 
-    const browser = await puppeteer.launch({
-      headless: "new",
+    let browser = await puppeteer.launch({
+      headless: 'new',
+      executablePath: chromePath,
       args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--lang=uk-UA",
-        "--window-size=1366,768"
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--lang=uk-UA,uk,en',
+        '--window-size=1280,720'
       ],
-      defaultViewport: VIEWPORT
+      defaultViewport: { width: 1280, height: 720 },
+      locale: language,
     });
 
-    let visited = 0;
-
-    for (const url of urls) {
-      const page = await browser.newPage();
-      await page.setUserAgent(USER_AGENT);
-
-      try {
-        await page.goto(url, {
-          waitUntil: "networkidle2",
-          timeout: 30000
-        });
-        visited++;
-        console.log(`✅ Прогріто: ${url}`);
-      } catch (error) {
-        console.warn(`⚠️ Помилка на ${url}: ${error.message}`);
-      } finally {
-        await page.close();
+    let index = 0;
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      if (done.includes(url)) {
+        console.log(`⏩ Пропущено (${i + 1}): ${url}`);
+        continue;
       }
 
-      await new Promise((r) => setTimeout(r, DELAY_BETWEEN_PAGES_MS));
+      try {
+        if (index > 0 && index % 10 === 0) {
+          console.log('⏳ Перекур 1 хвилина...');
+          await delay(60000);
+        }
+
+        const page = await browser.newPage();
+        await page.setUserAgent(userAgent);
+        await page.setExtraHTTPHeaders({ 'Accept-Language': language });
+        await page.emulateTimezone(timezone);
+
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+        index++;
+        console.log(`✅ Прогріто ${index}: ${url}`);
+        await page.close();
+
+        done.push(url);
+        await fs.writeFile(donePath, JSON.stringify(done, null, 2));
+      } catch (err) {
+        console.error(`⚠️ Помилка на ${url}: ${err.message}`);
+        console.log('🔁 Перезапуск браузера після помилки...');
+        try {
+          await browser.close();
+        } catch {}
+        browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: chromePath,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--lang=uk-UA,uk,en',
+            '--window-size=1280,720'
+          ],
+          defaultViewport: { width: 1280, height: 720 },
+          locale: language,
+        });
+      }
+
+      await delay(2000);
     }
 
     await browser.close();
-
-    return res.json({ status: "done", total: visited });
-  } catch (error) {
-    console.error("🚨 Помилка в /extract:", error);
-    return res.status(500).json({
-      error: "Internal Server Error",
-      message: error.message || "Невідома помилка"
-    });
+    res.send(`✅ Пройдено ${index} URL. Завершено.`);
+  } catch (err) {
+    console.error(`\ud83d\udea8 Помилка в /extract: ${err}`);
+    res.status(500).send(err.toString());
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("🛰️ RSS Puppeteer Crawler API — працює");
-});
-
 app.listen(PORT, () => {
-  console.log(`🚀 API запущено на порті ${PORT}`);
+  console.log(`\ud83d\ude80 API запущено на порті ${PORT}`);
 });
