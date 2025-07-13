@@ -3,8 +3,6 @@ import express from "express";
 import puppeteer from "puppeteer";
 import axios from "axios";
 import xml2js from "xml2js";
-import fs from "fs/promises";
-import path from "path";
 import { performance } from "perf_hooks";
 
 const app = express();
@@ -21,22 +19,7 @@ const LONG_BREAK_MS = 120_000;
 const LANGUAGE = "uk-UA";
 const TIMEZONE = "Europe/Kyiv";
 
-const donePath = path.resolve("done.json");
-
 app.use(express.static("public"));
-
-async function loadDoneList() {
-  try {
-    const data = await fs.readFile(donePath, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
-}
-
-async function saveDoneList(done) {
-  await fs.writeFile(donePath, JSON.stringify(done, null, 2));
-}
 
 function delay(ms) {
   return new Promise((res) => setTimeout(res, ms));
@@ -61,20 +44,13 @@ async function extractUrlsFromSitemap(sitemapUrl) {
 
 app.get("/extract", async (req, res) => {
   const sitemapUrl = req.query.url;
-  const reset = req.query.reset === "1";
 
   if (!sitemapUrl || !sitemapUrl.startsWith("http")) {
     return res.status(400).json({ error: "Невірний або відсутній параметр ?url" });
   }
 
   try {
-    if (reset) {
-      await fs.unlink(donePath).catch(() => {});
-      console.log("🔄 Історія очищена (done.json видалено)");
-    }
-
     const urls = await extractUrlsFromSitemap(sitemapUrl);
-    const done = await loadDoneList();
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return res.status(404).json({ error: "Жодного <loc> у sitemap не знайдено." });
@@ -93,16 +69,10 @@ app.get("/extract", async (req, res) => {
 
     let visited = 0;
     const startedAt = Date.now();
-    const logs = [];
 
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i];
-
-      if (done.includes(url)) {
-        console.log(`⏩ Пропущено (${i + 1}): ${url}`);
-        logs.push({ url, status: "skipped" });
-        continue;
-      }
+      let page;
 
       try {
         if (i > 0 && i % LONG_BREAK_AFTER === 0) {
@@ -110,7 +80,13 @@ app.get("/extract", async (req, res) => {
           await delay(LONG_BREAK_MS);
         }
 
-        const page = await browser.newPage();
+        page = await Promise.race([
+          browser.newPage(),
+          delay(10000).then(() => {
+            throw new Error("browser.newPage() завис");
+          })
+        ]);
+
         await page.setUserAgent(USER_AGENT);
         await page.setExtraHTTPHeaders({ "Accept-Language": LANGUAGE });
         await page.emulateTimezone(TIMEZONE);
@@ -120,16 +96,11 @@ app.get("/extract", async (req, res) => {
         const timeSpent = ((performance.now() - start) / 1000).toFixed(1);
 
         console.log(`✅ Прогріто ${i + 1}: ${url} (${timeSpent} сек)`);
-        logs.push({ url, status: "ok", time: timeSpent });
-
-        await page.close();
-
-        done.push(url);
-        await saveDoneList(done);
         visited++;
       } catch (err) {
         console.warn(`⚠️ Помилка ${i + 1} на ${url}: ${err.message}`);
-        logs.push({ url, status: "error", message: err.message });
+      } finally {
+        if (page) await page.close();
       }
 
       await delay(DELAY_BETWEEN_PAGES_MS);
@@ -138,7 +109,9 @@ app.get("/extract", async (req, res) => {
     await browser.close();
 
     const timeTaken = ((Date.now() - startedAt) / 1000).toFixed(1);
-    return res.json({ status: "done", visited, skipped: urls.length - visited, timeTaken, logs });
+    return res.json({
+      message: `✅ Завершено. Прогріто ${visited} сторінок із ${urls.length} за ${timeTaken} сек.`
+    });
   } catch (error) {
     console.error("🚨 Помилка в /extract:", error);
     return res.status(500).json({
